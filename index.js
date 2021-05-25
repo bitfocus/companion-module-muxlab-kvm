@@ -43,11 +43,12 @@ instance.prototype.init_connection = function() {
 	var self = this;
 	if ((self.config.username !== '') && (self.config.password !== '') && (self.config.host !== '')) {
 		self.get_devices();
+		self.config.systemid = parseInt(self.config.systemid);
 
 		if (self.config.polling) {
 			self.polling = setInterval(() => {
 				self.get_devices();
-			}, 5000);
+			}, 300000); //5 minutes
 		}
 	}
 };
@@ -57,74 +58,41 @@ instance.prototype.get_devices = function() {
 
 	let jsonBody = {
 		'p_targetId': self.config.systemid,
+		'p_cmd': 'get_devices',
 		'p_userName': self.config.username,
-		'p_password': self.config.password,
-		'p_cmd': 'get_devices'
+		'p_password': self.config.password
 	};
 
-	self.postRest(cmd, jsonBody).then(function(result) {
+	self.postRest(jsonBody).then(function(result) {
 		//process results
-		/*
-		"p_targetId":<systemID>,
-		"p_cmd":"launch_discovery_auto",
-		"p_rspStatus":"SUCCESS",
-		"p _msg":"<a_message>",
-		"p_data":[
-			{
-				"productName":"<value>",
-				"modelName":"<value>",
-				"customName":"<value>",
-				"mac":"<value>",
-				"ip":"<value>",
-				"mask":"<value>",
-				"isDhcp":<0/1>,
-				"multicastGroupIp":"<value>",
-				"videoResolution":"<value >",
-				"videoFrameRate":"<value>",
-				"audioFormat":"<value>",
-				"isVideoSignalDetected":<0/1>,
-				"isIrOn":<0/1>,
-				"isDipSwitchEnabled":<0/1>,
-				"fwVer":"<value>",
-				"uartBaudRate":"<value>",
-				"irMode":"<emitter/sensor>",
-				"rs232FeedbackIP":"<value>",
-				"irFeedbackIP":"<value>",
-				"isRs232FeedbackOn":<0/1>,
-				"isRs232IpHeader":<0/1>,
-				"compressionRate":"<value>",
-				"isAutoCompressionOn":<0/1>,
-				"is60fps":<0/1>,
-				"isDisplayConnected":<0/1>,
-				"isScreenImageOn":<0/1>,
-				"isScreenTextOn":<0/1>,
-				"connected Mac":"<value>",
-				"isAutoResolutionOn":<0/1>
-			}
-		]
-		*/
+		let data = JSON.parse(result.data.toString());
 
-		let added = false;
+		if (data.p_rspStatus === 'SUCCESS') {
+			self.status(self.STATUS_OK);
 
-		for (let i = 0; i < result.p_data.length; i++) {
-			let mac = result.p_data[i].mac;
-			
-			let found = false;
-
-			for (let j = 0; j < self.devices.length; j++) {
-				if (self.devices[j].mac === mac) {
-					self.devices[j] = result.p_data[i];
-					found = true;
-					break;
+			for (let i = 0; i < data.p_data.length; i++) {
+				let mac = data.p_data[i].mac;
+				
+				let found = false;
+	
+				for (let j = 0; j < self.devices.length; j++) {
+					if (self.devices[j].mac === mac) {
+						self.devices[j] = data.p_data[i];
+						found = true;
+						break;
+					}
+				}
+	
+				if (!found) {
+					self.devices.push(data.p_data[i]);
 				}
 			}
-
-			if (!found) {
-				self.devices.push(result.p_data[i]);
-			}
+	
+			self.rebuildDeviceList();
 		}
-
-		self.rebuildDeviceList();
+		else if (data.p_rspStatus === 'FAILED') {
+			self.log('error', 'Failed to get devices');
+		}
 	}).catch(function(message) {
 		clearInterval(self.polling);
 		self.status(self.STATUS_ERROR);
@@ -137,6 +105,12 @@ instance.prototype.rebuildDeviceList = function () {
 	let self = this;
 
 	self.devices_list = [];
+
+	let defaultObj = {
+		id: '0',
+		label: '(choose a device)'
+	}
+	self.devices_list.push(defaultObj);
 
 	for (let i = 0; i < self.devices.length; i++) {
 		let deviceObj = {};
@@ -188,12 +162,12 @@ instance.prototype.config_fields = function() {
 			id: 'systemid',
 			label: 'System ID',
 			width: 4,
-			default: '0'
+			default: '1'
 		},
 		{
 			type: 'checkbox',
 			id: 'polling',
-			label: 'Auto-polling (every 5s)',
+			label: 'Auto-polling (every 5m)',
 			width: 4,
 			default: true
 		},
@@ -361,7 +335,8 @@ instance.prototype.actions = function(system) {
 					type: 'dropdown',
 					label: 'On/Off',
 					id: 'onoff',
-					choices: [ { id: '0', label: 'Off' }, { id: '1', label: 'On' } ]
+					choices: [ { id: '0', label: 'Off' }, { id: '1', label: 'On' } ],
+					default: '0'
 				}
 			]
 		},
@@ -378,7 +353,8 @@ instance.prototype.actions = function(system) {
 					type: 'dropdown',
 					label: 'On/Off',
 					id: 'onoff',
-					choices: [ { id: '0', label: 'Off' }, { id: '1', label: 'On' } ]
+					choices: [ { id: '0', label: 'Off' }, { id: '1', label: 'On' } ],
+					default: '0'
 				}
 			]
 		}
@@ -388,7 +364,6 @@ instance.prototype.actions = function(system) {
 /**
  * Requests/Retrieves information via POST and returns a Promise.
  *
- * @param cmd           The command to execute
  * @param body          The body of the POST; an object.
  * @return              A Promise that's resolved after the POST.
  */
@@ -401,7 +376,6 @@ instance.prototype.postRest = function(body) {
  * Performs the REST command, either GET or POST.
  *
  * @param method        Either GET or POST
- * @param cmd           The command to execute
  * @param body          If POST, an object containing the POST's body
  */
 instance.prototype.doRest = function(method, body) {
@@ -502,6 +476,8 @@ instance.prototype.action = function(action) {
 };
 
 instance.prototype.connect = function (tx, rx) {
+	let self = this;
+
 	let jsonBody = {
 		'p_targetId': self.config.systemid,
 		'p_userName': self.config.username,
@@ -515,7 +491,10 @@ instance.prototype.connect = function (tx, rx) {
 		]
 	};
 
-	self.postRest(cmd, jsonBody).then(function(result) {
+	console.log(jsonBody);
+
+	self.postRest(jsonBody).then(function(result) {
+		//self.log('info', result);
 		//process results
 		/*
 		"p_targetId":<systemID>,
@@ -529,12 +508,15 @@ instance.prototype.connect = function (tx, rx) {
 			"msg":""
 		]
 		*/
-		if (result.p_rspStatus === 'SUCCESS') {
+
+		let data = JSON.parse(result.data.toString());
+
+		if (data.p_rspStatus === 'SUCCESS') {
 			//succeeded
 			self.status(self.STATUS_OK);
 			self.log('info', `Connection successful: ${tx}:${rx}`);
 		}
-		else if (result.p_rspStatus === 'FAILED') {
+		else if (data.p_rspStatus === 'FAILED') {
 			throw `Connection failed: ${tx}:${rx}`;
 		}
 	}).catch(function(message) {
@@ -544,6 +526,8 @@ instance.prototype.connect = function (tx, rx) {
 };
 
 instance.prototype.disconnect = function (rx) {
+	let self = this;
+
 	let jsonBody = {
 		'p_targetId': self.config.systemid,
 		'p_userName': self.config.username,
@@ -557,7 +541,8 @@ instance.prototype.disconnect = function (rx) {
 		]
 	};
 
-	self.postRest(cmd, jsonBody).then(function(result) {
+	self.postRest(jsonBody).then(function(result) {
+		//self.log('info', result);
 		//process results
 		/*
 		"p_targetId":<systemID>,
@@ -571,12 +556,15 @@ instance.prototype.disconnect = function (rx) {
 			"msg":""
 		]
 		*/
-		if (result.p_rspStatus === 'SUCCESS') {
+
+		let data = JSON.parse(result.data.toString());
+
+		if (data.p_rspStatus === 'SUCCESS') {
 			//succeeded
 			self.status(self.STATUS_OK);
 			self.log('info', `Disconnection successful: ${rx}`);
 		}
-		else if (result.p_rspStatus === 'FAILED') {
+		else if (data.p_rspStatus === 'FAILED') {
 			throw `Disconnection failed: ${rx}`;
 		}
 	}).catch(function(message) {
@@ -586,6 +574,8 @@ instance.prototype.disconnect = function (rx) {
 };
 
 instance.prototype.reboot = function (device) {
+	let self = this;
+
 	let jsonBody = {
 		'p_targetId': self.config.systemid,
 		'p_userName': self.config.username,
@@ -598,7 +588,8 @@ instance.prototype.reboot = function (device) {
 		]
 	};
 
-	self.postRest(cmd, jsonBody).then(function(result) {
+	self.postRest(jsonBody).then(function(result) {
+		//self.log('info', result);
 		//process results
 		/*
 		"p_targetId":<systemID>,
@@ -610,12 +601,15 @@ instance.prototype.reboot = function (device) {
 			”p_rspStatus”:"SUCCESS or FAILED","msg":""}
 		]
 		*/
-		if (result.p_rspStatus === 'SUCCESS') {
+
+		let data = JSON.parse(result.data.toString());
+
+		if (data.p_rspStatus === 'SUCCESS') {
 			//succeeded
 			self.status(self.STATUS_OK);
 			self.log('info', `Reboot successful: ${device}`);
 		}
-		else if (result.p_rspStatus === 'FAILED') {
+		else if (data.p_rspStatus === 'FAILED') {
 			throw `Reboot failed: ${device}`;
 		}
 	}).catch(function(message) {
@@ -625,6 +619,8 @@ instance.prototype.reboot = function (device) {
 };
 
 instance.prototype.presetApply = function (preset) {
+	let self = this;
+
 	let jsonBody = {
 		'p_targetId': self.config.systemid,
 		'p_userName': self.config.username,
@@ -637,14 +633,18 @@ instance.prototype.presetApply = function (preset) {
 		]
 	};
 
-	self.postRest(cmd, jsonBody).then(function(result) {
+	self.postRest(jsonBody).then(function(result) {
+		//self.log('info', result);
 		//process results
-		if (result.p_rspStatus === 'SUCCESS') {
+
+		let data = JSON.parse(result.data.toString());
+
+		if (data.p_rspStatus === 'SUCCESS') {
 			//succeeded
 			self.status(self.STATUS_OK);
 			self.log('info', `Preset Apply successful: ${preset}`);
 		}
-		else if (result.p_rspStatus === 'FAILED') {
+		else if (data.p_rspStatus === 'FAILED') {
 			throw `Preset Apply failed: ${preset}`;
 		}
 	}).catch(function(message) {
@@ -654,6 +654,8 @@ instance.prototype.presetApply = function (preset) {
 };
 
 instance.prototype.presetSave = function (preset) {
+	let self = this;
+
 	let jsonBody = {
 		'p_targetId': self.config.systemid,
 		'p_userName': self.config.username,
@@ -666,14 +668,18 @@ instance.prototype.presetSave = function (preset) {
 		]
 	};
 
-	self.postRest(cmd, jsonBody).then(function(result) {
+	self.postRest(jsonBody).then(function(result) {
+		//self.log('info', result);
 		//process results
-		if (result.p_rspStatus === 'SUCCESS') {
+
+		let data = JSON.parse(result.data.toString());
+
+		if (data.p_rspStatus === 'SUCCESS') {
 			//succeeded
 			self.status(self.STATUS_OK);
 			self.log('info', `Preset Save successful: ${preset}`);
 		}
-		else if (result.p_rspStatus === 'FAILED') {
+		else if (data.p_rspStatus === 'FAILED') {
 			throw `Preset Save failed: ${preset}`;
 		}
 	}).catch(function(message) {
@@ -683,6 +689,8 @@ instance.prototype.presetSave = function (preset) {
 };
 
 instance.prototype.presetNew = function (preset_name) {
+	let self = this;
+
 	let jsonBody = {
 		'p_targetId': self.config.systemid,
 		'p_userName': self.config.username,
@@ -695,14 +703,18 @@ instance.prototype.presetNew = function (preset_name) {
 		]
 	};
 
-	self.postRest(cmd, jsonBody).then(function(result) {
+	self.postRest(jsonBody).then(function(result) {
+		//self.log('info', result);
 		//process results
-		if (result.p_rspStatus === 'SUCCESS') {
+
+		let data = JSON.parse(result.data.toString());
+
+		if (data.p_rspStatus === 'SUCCESS') {
 			//succeeded
 			self.status(self.STATUS_OK);
 			self.log('info', `Preset Save New successful: ${preset_name}`);
 		}
-		else if (result.p_rspStatus === 'FAILED') {
+		else if (data.p_rspStatus === 'FAILED') {
 			throw `Preset Save New failed: ${preset_name}`;
 		}
 	}).catch(function(message) {
@@ -712,6 +724,8 @@ instance.prototype.presetNew = function (preset_name) {
 };
 
 instance.prototype.device_setAttribute = function (device, attributeName, attributeValue) {
+	let self = this;
+
 	let jsonBody = {
 		'p_targetId': self.config.systemid,
 		'p_userName': self.config.username,
@@ -725,14 +739,18 @@ instance.prototype.device_setAttribute = function (device, attributeName, attrib
 		]
 	};
 
-	self.postRest(cmd, jsonBody).then(function(result) {
+	self.postRest(jsonBody).then(function(result) {
+		//self.log('info', result);
 		//process results
-		if (result.p_rspStatus === 'SUCCESS') {
+
+		let data = JSON.parse(result.data.toString());
+
+		if (data.p_rspStatus === 'SUCCESS') {
 			//succeeded
 			self.status(self.STATUS_OK);
 			self.log('info', `Device Attribute ${attributeName} set successful: ${device}`);
 		}
-		else if (result.p_rspStatus === 'FAILED') {
+		else if (data.p_rspStatus === 'FAILED') {
 			throw `Device Attribute ${attributeName} set failed: ${device}`;
 		}
 	}).catch(function(message) {
@@ -743,15 +761,9 @@ instance.prototype.device_setAttribute = function (device, attributeName, attrib
 
 /**
  * Makes the complete URL.
- *
- * @param cmd           Must start with a /
  */
 instance.prototype.makeUrl = function() {
 	var self = this;
-
-	if (cmd[0] !== '/') {
-		throw new Error('cmd must start with a /');
-	}
 
 	return 'http://' + self.config.host + apiUrl;
 };
