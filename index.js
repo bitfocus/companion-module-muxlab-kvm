@@ -18,7 +18,9 @@ function instance(system, id, config) {
 const apiUrl = '/mnc/secure_api.php';
 
 instance.prototype.devices = [];
-instance.prototype.devices_list = [ { id: '0', label: '(no devices found)'} ];
+instance.prototype.devices_list_tx = [ { id: '0', label: '(no transmitters found)'} ];
+instance.prototype.devices_list_rx = [ { id: '0', label: '(no receivers found)'} ];
+instance.prototype.devices_list_all = [ { id: '0', label: '(no devices found)'} ];
 
 /**
  * Config updated by the user.
@@ -104,19 +106,39 @@ instance.prototype.rebuildDeviceList = function () {
 	//rebuilds the array of devices used in the actions list
 	let self = this;
 
-	self.devices_list = [];
+	self.devices_list_tx = [];
+	self.devices_list_rx = [];
+	self.devices_list_all = [];
+
+	let defaultTXObj = {
+		id: '0',
+		label: '(choose a transmitter)'
+	}
+	self.devices_list_tx.push(defaultTXObj);
+
+	let defaultRXObj = {
+		id: '0',
+		label: '(choose a receiver)'
+	}
+	self.devices_list_rx.push(defaultRXObj);
 
 	let defaultObj = {
 		id: '0',
 		label: '(choose a device)'
 	}
-	self.devices_list.push(defaultObj);
+	self.devices_list_all.push(defaultObj);
 
 	for (let i = 0; i < self.devices.length; i++) {
 		let deviceObj = {};
 		deviceObj.id = self.devices[i].mac;
 		deviceObj.label = self.devices[i].customName + ' ' + self.devices[i].mac;
-		self.devices_list.push(deviceObj);
+		if (self.devices[i].modelName.indexOf('-TX') > -1) {
+			self.devices_list_tx.push(deviceObj);
+		}
+		else {
+			self.devices_list_rx.push(deviceObj);
+		}
+		self.devices_list_all.push(deviceObj);
 	}
 
 	self.actions(); //rebuild the actions
@@ -201,13 +223,13 @@ instance.prototype.actions = function(system) {
 					type: 'dropdown',
 					label: 'Transmitter',
 					id: 'device_tx',
-					choices: self.devices_list
+					choices: self.devices_list_tx
 				},
 				{
 					type: 'dropdown',
 					label: 'Receiver',
 					id: 'device_rx',
-					choices: self.devices_list
+					choices: self.devices_list_rx
 				}
 			]
 		},
@@ -235,7 +257,7 @@ instance.prototype.actions = function(system) {
 					type: 'dropdown',
 					label: 'Receiver',
 					id: 'device_rx',
-					choices: self.devices_list
+					choices: self.devices_list_rx
 				}
 			]
 		},
@@ -257,7 +279,7 @@ instance.prototype.actions = function(system) {
 					type: 'dropdown',
 					label: 'Device',
 					id: 'device',
-					choices: self.devices_list
+					choices: self.devices_list_all
 				}
 			]
 		},
@@ -312,7 +334,7 @@ instance.prototype.actions = function(system) {
 					type: 'dropdown',
 					label: 'Device',
 					id: 'device',
-					choices: self.devices_list
+					choices: self.devices_list_all
 				},
 				{
 					type: 'textinput',
@@ -329,7 +351,7 @@ instance.prototype.actions = function(system) {
 					type: 'dropdown',
 					label: 'Device',
 					id: 'device',
-					choices: self.devices_list
+					choices: self.devices_list_all
 				},
 				{
 					type: 'dropdown',
@@ -347,7 +369,7 @@ instance.prototype.actions = function(system) {
 					type: 'dropdown',
 					label: 'Device',
 					id: 'device',
-					choices: self.devices_list
+					choices: self.devices_list_all
 				},
 				{
 					type: 'dropdown',
@@ -491,23 +513,8 @@ instance.prototype.connect = function (tx, rx) {
 		]
 	};
 
-	console.log(jsonBody);
-
 	self.postRest(jsonBody).then(function(result) {
-		//self.log('info', result);
 		//process results
-		/*
-		"p_targetId":<systemID>,
-		"p_cmd":"connection",
-		"p_rspStatus":"SUCCESS",
-		"p_msg":"<a message>",
-		"p_data":[
-			{"macRx":"<Rx device mac address>",
-			"macTx":"<Tx device mac address>",
-			"p_rspStatus":"SUCCESS or FAILED",
-			"msg":""
-		]
-		*/
 
 		let data = JSON.parse(result.data.toString());
 
